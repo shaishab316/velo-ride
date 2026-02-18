@@ -16,6 +16,7 @@ import { ParcelServices } from '../parcel/Parcel.service';
 import { NotificationServices } from '../notification/Notification.service';
 import { RIDE_KIND } from './Trip.constant';
 import { SocketServices } from '../socket/Socket.service';
+import { prisma } from '@/utils/db';
 
 export const TripControllers = {
   getTripDetails: catchAsync(async ({ params }) => {
@@ -238,6 +239,14 @@ export const TripControllers = {
       const trip = await TripServices.driverCancelTrip({
         driver_id: driver.id,
         trip_id: payload.trip_id,
+      });
+
+      //? Emit socket event to driver about trip completion and payment
+      await prisma.user.update({
+        where: { id: driver.id },
+        data: {
+          is_online: true, //? set driver online after trip completion
+        },
       });
 
       return {

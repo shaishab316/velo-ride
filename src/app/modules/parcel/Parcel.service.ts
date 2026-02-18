@@ -233,6 +233,18 @@ export const ParcelServices = {
       } satisfies TRideResponseV2);
     }
 
+    const driverId = parcel.driver_id || parcel.processing_driver_id;
+
+    if (driverId) {
+      //? Emit socket event to driver about trip completion and payment
+      await prisma.user.update({
+        where: { id: driverId },
+        data: {
+          is_online: true, //? set driver online after trip completion
+        },
+      });
+    }
+
     return cancelledParcel;
   },
 

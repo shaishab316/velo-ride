@@ -243,6 +243,17 @@ export const TripServices = {
       } satisfies TRideResponseV2);
     }
 
+    const driverId = trip.driver_id || trip.processing_driver_id;
+
+    if (driverId) {
+      await prisma.user.update({
+        where: { id: driverId },
+        data: {
+          is_online: true, //? set driver online after trip cancellation
+        },
+      });
+    }
+
     return cancelledTrip;
   },
 

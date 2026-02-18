@@ -219,6 +219,14 @@ export const ParcelControllers = {
         parcel_id: payload.parcel_id,
       });
 
+      //? Emit socket event to driver about trip completion and payment
+      await prisma.user.update({
+        where: { id: driver.id },
+        data: {
+          is_online: true, //? set driver online after trip completion
+        },
+      });
+
       return {
         message: 'Parcel cancelled successfully',
         data: {
