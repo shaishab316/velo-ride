@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import { Server } from 'http';
 import { Server as IOServer } from 'socket.io';
 import config from '../../../config';
@@ -10,6 +11,7 @@ import { TripSocket } from '../trip/Trip.socket';
 import { ParcelSocket } from '../parcel/Parcel.socket';
 import { DriverSocket } from '../driver/Driver.socket';
 import { MessageSocket } from '../message/Message.socket';
+import { OnlineLogServices } from '../onlineLog/OnlineLog.service';
 
 let io: IOServer | null = null;
 const onlineUsers = new Set<string>();
@@ -27,8 +29,11 @@ export const SocketServices = {
     // Single root namespace only
     io.use(auth);
 
-    io.on('connection', (socket: TAuthenticatedSocket) => {
+    io.on('connection', async (socket: TAuthenticatedSocket) => {
       const { user } = socket.data;
+
+      //? Log online status in DB and create online log
+      await OnlineLogServices.onlineSessionStart(user.id);
 
       socket.join(user.id); // join personal room
 
@@ -96,6 +101,8 @@ export const SocketServices = {
         data: { is_online: false, last_online_at: new Date() },
         select: { id: true },
       });
+
+      await OnlineLogServices.onlineSessionEnd(userId);
     } catch (error) {
       console.error('Error updating user online status:', error);
     }

@@ -1,0 +1,14 @@
+model OnlineLog {
+  id String @id @default(uuid())
+
+  user_id        String
+  data           DateTime  @db.Date()
+  online_seconds Int       @default(0)
+  started_at     DateTime
+  ended_at       DateTime?
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, data], name: "user_date_idx")
+  @@map("online_logs")
+}

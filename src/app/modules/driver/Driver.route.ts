@@ -31,6 +31,14 @@ const driver = injectRoutes(Router(), {
   '/transactions': [TransactionRoutes.driver],
 });
 {
+  /**
+   * Driver home route,
+   *
+   * @returns
+   * - total trips count
+   * - total earnings
+   * - total online time
+   */
   driver.get('/', DriverControllers.home);
 
   /**

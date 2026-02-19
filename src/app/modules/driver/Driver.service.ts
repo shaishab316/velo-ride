@@ -17,6 +17,7 @@ import type {
 import { deleteFiles } from '@/app/middlewares/capture';
 import { dateRange } from '../datetime/Datetime.utils';
 import { NotificationServices } from '../notification/Notification.service';
+import { OnlineLogServices } from '../onlineLog/OnlineLog.service';
 
 export const DriverServices = {
   async superGetPendingDriver({ page, limit, search }: TList) {
@@ -272,32 +273,30 @@ export const DriverServices = {
     };
   },
 
+  /**
+   * Get aggregated data for driver's home screen, including total trips/parcels count, total earnings, and today's online time.
+   */
   async home({ driver_id }: { driver_id: string }) {
-    const aggregateTrip = await prisma.trip.aggregate({
-      where: { driver_id },
-      _sum: {
-        total_cost: true,
-        time: true,
-      },
-      _count: { id: true },
-    });
-
-    const aggregateParcel = await prisma.parcel.aggregate({
-      where: { driver_id },
-      _sum: {
-        total_cost: true,
-        time: true,
-      },
-      _count: { id: true },
-    });
+    const [aggregateTrip, aggregateParcel, onlineTime] = await Promise.all([
+      prisma.trip.aggregate({
+        where: { driver_id },
+        _sum: { total_cost: true },
+        _count: { id: true },
+      }),
+      prisma.parcel.aggregate({
+        where: { driver_id },
+        _sum: { total_cost: true },
+        _count: { id: true },
+      }),
+      OnlineLogServices.getTodayOnlineTime(driver_id),
+    ]);
 
     return {
       total_count: aggregateTrip._count.id + aggregateParcel._count.id,
       total_earnings:
         (aggregateTrip._sum.total_cost ?? 0) +
         (aggregateParcel._sum.total_cost ?? 0),
-      total_time:
-        (aggregateTrip._sum.time ?? 0) + (aggregateParcel._sum.time ?? 0),
+      total_time: onlineTime,
     };
   },
 
