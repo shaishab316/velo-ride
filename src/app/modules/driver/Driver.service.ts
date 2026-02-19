@@ -296,7 +296,7 @@ export const DriverServices = {
       total_earnings:
         (aggregateTrip._sum.total_cost ?? 0) +
         (aggregateParcel._sum.total_cost ?? 0),
-      total_time: onlineTime,
+      total_time: onlineTime * 1000, //? Convert seconds to milliseconds
     };
   },
 
