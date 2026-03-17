@@ -4,6 +4,7 @@ import { ETransactionType, ETripStatus, prisma } from '@/utils/db';
 import type {
   TGetSuperTripDetailsPayload,
   TRequestForTrip,
+  TRideResponseV2,
   TTripRefreshLocation,
 } from './Trip.interface';
 import { calculateTripCost, generateTripSlug } from './Trip.utils';
@@ -12,6 +13,7 @@ import { userOmit } from '../user/User.constant';
 import { NotificationServices } from '../notification/Notification.service';
 import { SocketServices } from '../socket/Socket.service';
 import { processSingleDriverDispatch } from './Trip.job';
+import { DRIVER_EARNING_PERCENTAGE, RIDE_KIND } from './Trip.constant';
 
 export const TripServices = {
   async getTripDetails(trip_id: string) {
@@ -32,11 +34,17 @@ export const TripServices = {
   async requestForTrip(payload: TRequestForTrip) {
     const driver_ids = await getNearestDriver(payload);
 
-    const trip = await prisma.trip.create({
+    const totalCost = await calculateTripCost(payload);
+    const driverEarning = totalCost * DRIVER_EARNING_PERCENTAGE;
+    const adminEarning = totalCost - driverEarning;
+
+    const { helper, ...trip } = await prisma.trip.create({
       data: {
         ...payload,
         slug: await generateTripSlug(),
-        total_cost: await calculateTripCost(payload),
+        total_cost: totalCost,
+        driver_earning: +driverEarning.toFixed(2),
+        admin_earning: +adminEarning.toFixed(2),
         date: new Date().toISOString().split('T')[0], // "YYYY-MM-DD"
         helper: {
           create: {
@@ -51,8 +59,8 @@ export const TripServices = {
       },
     });
 
-    if (trip.helper) {
-      await processSingleDriverDispatch(trip.helper);
+    if (helper) {
+      await processSingleDriverDispatch(helper);
     }
 
     return trip;
@@ -67,25 +75,29 @@ export const TripServices = {
   }) {
     const trip = await prisma.trip.findUnique({
       where: { id: trip_id },
-      select: {
-        driver: {
-          select: {
-            name: true,
-            id: true,
-          },
-        },
-        user_id: true,
+      include: {
+        user: { omit: userOmit.USER },
+        driver: { omit: userOmit.DRIVER },
       },
     });
 
     if (!trip) {
-      throw new Error('Trip not found');
+      throw new ServerError(StatusCodes.NOT_FOUND, 'Trip not found');
     }
 
     if (trip?.driver?.id && trip?.driver?.id !== driver_id) {
       throw new ServerError(
         StatusCodes.CONFLICT,
         `${trip?.driver?.name?.split(' ')[0]} is already accepted this trip`,
+      );
+    }
+
+    if (trip.status === ETripStatus.ACCEPTED) {
+      return trip;
+    } else if (trip.status !== ETripStatus.REQUESTED) {
+      throw new ServerError(
+        StatusCodes.CONFLICT,
+        `This trip is already ${trip.status.toLowerCase()}`,
       );
     }
 
@@ -218,14 +230,27 @@ export const TripServices = {
     }
 
     if (trip.driver_id) {
-      SocketServices.emitToUser(trip.driver_id, 'trip:canceled', {
-        trip: trip,
-      });
+      SocketServices.emitToUser(trip.driver_id, 'driver-trip', {
+        kind: RIDE_KIND.TRIP,
+        data: cancelledTrip,
+      } satisfies TRideResponseV2);
     }
 
     if (trip.processing_driver_id) {
-      SocketServices.emitToUser(trip.processing_driver_id, 'trip:canceled', {
-        trip: trip,
+      SocketServices.emitToUser(trip.processing_driver_id, 'driver-trip', {
+        kind: RIDE_KIND.TRIP,
+        data: cancelledTrip,
+      } satisfies TRideResponseV2);
+    }
+
+    const driverId = trip.driver_id || trip.processing_driver_id;
+
+    if (driverId) {
+      await prisma.user.update({
+        where: { id: driverId },
+        data: {
+          is_online: true, //? set driver online after trip cancellation
+        },
       });
     }
 
@@ -314,22 +339,32 @@ export const TripServices = {
   }) {
     const trip = await prisma.trip.findUnique({
       where: { id: trip_id },
+      include: {
+        user: { omit: userOmit.USER },
+        driver: { omit: userOmit.DRIVER },
+      },
     });
 
     if (!trip) {
-      throw new Error('Trip not found');
+      throw new ServerError(StatusCodes.NOT_FOUND, 'Trip not found');
     }
 
     if (trip.status === ETripStatus.REQUESTED) {
       if (trip.processing_driver_id !== driver_id) {
-        throw new Error('You are not assigned to this trip');
+        throw new ServerError(
+          StatusCodes.FORBIDDEN,
+          'You are not assigned to this trip',
+        );
       }
     } else if (trip.driver_id !== driver_id) {
-      throw new Error('You are not assigned to this trip');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not assigned to this trip',
+      );
     }
 
     if (trip.status === ETripStatus.REQUESTED) {
-      const trip = await prisma.trip.update({
+      const updatedTrip = await prisma.trip.update({
         where: { id: trip_id },
         data: {
           processing_driver_id: null,
@@ -341,10 +376,10 @@ export const TripServices = {
         },
       });
 
-      if (!trip.helper) return;
+      if (!updatedTrip.helper) return trip;
 
       //? Proceed to next driver in queue
-      await processSingleDriverDispatch(trip.helper);
+      await processSingleDriverDispatch(updatedTrip.helper);
     } else {
       await prisma.trip.update({
         where: { id: trip_id },
@@ -361,6 +396,8 @@ export const TripServices = {
         type: 'WARNING',
       });
     }
+
+    return trip;
   },
 
   async startTrip({
@@ -375,7 +412,10 @@ export const TripServices = {
     });
 
     if (trip?.driver_id !== driver_id) {
-      throw new Error('You are not assigned to this trip');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not assigned to this trip',
+      );
     }
 
     const startedTrip = await prisma.trip.update({
@@ -416,7 +456,10 @@ export const TripServices = {
     });
 
     if (trip?.driver_id !== driver_id) {
-      throw new Error('You are not assigned to this trip');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not assigned to this trip',
+      );
     }
 
     trip.started_at ??= new Date();
@@ -465,7 +508,10 @@ export const TripServices = {
     });
 
     if (trip?.user_id !== user_id) {
-      throw new Error('You are not authorized to pay for this trip');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not authorized to pay for this trip',
+      );
     }
 
     if (trip.payment_at) {
@@ -476,6 +522,17 @@ export const TripServices = {
           where: { ref_trip_id: trip_id },
         }),
       };
+    }
+
+    if (trip.status === ETripStatus.REQUESTED) {
+      throw new ServerError(
+        StatusCodes.BAD_REQUEST,
+        'Trip has not started yet',
+      );
+    } else if (trip.status === ETripStatus.CANCELLED) {
+      throw new ServerError(StatusCodes.BAD_REQUEST, 'Trip was cancelled');
+    } else if (trip.status === ETripStatus.COMPLETED) {
+      throw new ServerError(StatusCodes.BAD_REQUEST, 'Trip already completed');
     }
 
     return prisma.$transaction(async tx => {
@@ -508,14 +565,17 @@ export const TripServices = {
         where: { id: trip.driver_id! },
         data: {
           balance: {
-            increment: trip.total_cost,
+            increment: trip.driver_earning ?? 0,
           },
         },
       });
 
       //? Check for sufficient balance
       if (wallet.balance < 0) {
-        throw new Error('Insufficient balance in wallet');
+        throw new ServerError(
+          StatusCodes.BAD_REQUEST,
+          'Insufficient balance in wallet',
+        );
       }
 
       //? Warn if balance is low (less than $10)
@@ -543,7 +603,7 @@ export const TripServices = {
       await tx.transaction.create({
         data: {
           user_id: trip.driver_id!,
-          amount: trip.total_cost,
+          amount: trip.driver_earning ?? 0,
           type: ETransactionType.INCOME,
           ref_trip_id: trip_id,
           payment_method: 'WALLET',
@@ -564,6 +624,27 @@ export const TripServices = {
         title: 'Payment Received',
         message: `You received $${trip.total_cost} for the completed trip.`,
         type: 'INFO',
+      });
+
+      //? Emit socket event to driver about trip completion and payment
+      await tx.user.update({
+        where: { id: trip.driver_id! },
+        data: {
+          trip_given_count: {
+            increment: 1,
+          },
+          is_online: true, //? set driver online after trip completion
+        },
+      });
+
+      //? Emit socket event to driver about trip completion and payment
+      await tx.user.update({
+        where: { id: user_id },
+        data: {
+          trip_received_count: {
+            increment: 1,
+          },
+        },
       });
 
       return { trip, wallet, transaction };

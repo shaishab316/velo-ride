@@ -25,3 +25,12 @@ export type TDeleteUser = z.infer<typeof UserValidations.deleteUser>['body'];
 export type TUpdateOneSignalId = z.infer<
   typeof UserValidations.onesignalId
 >['body'] & { user_id: string };
+
+/**
+ * v2 Types can be added here
+ */
+export type TGetUserLocationV2 = z.infer<
+  typeof UserValidations.getUserLocationV2
+>;
+
+export type TGetUserLocationPayloadV2 = TGetUserLocationV2['query'];

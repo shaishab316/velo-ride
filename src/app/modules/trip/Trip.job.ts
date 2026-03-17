@@ -1,16 +1,13 @@
-import {
-  ETripStatus,
-  prisma,
-  Trip as TTrip,
-  TripHelper as TTripHelper,
-  User as TUser,
-} from '@/utils/db';
+import { ETripStatus, prisma, TripHelper as TTripHelper } from '@/utils/db';
 import { SocketServices } from '../socket/Socket.service';
 import ms from 'ms';
 import { errorLogger } from '@/utils/logger';
 import { NotificationServices } from '../notification/Notification.service';
 import { userOmit } from '../user/User.constant';
 import { getNearestDriver } from '../parcel/Parcel.utils';
+import { TRideResponseV2 } from './Trip.interface';
+import { RIDE_KIND } from './Trip.constant';
+import type { TripServices } from './Trip.service';
 
 /**
  * Recursively searches for drivers when none are available
@@ -133,7 +130,7 @@ export async function processSingleDriverDispatch(tripHelper: TTripHelper) {
     /**
      * STEP 4: Send real-time dispatch request to driver
      */
-    sendDriverDispatchNotification(processingTrip as any);
+    sendDriverDispatchNotification(processingTrip);
 
     //? Notify driver about new trip request
     await NotificationServices.createNotification({
@@ -181,13 +178,13 @@ export async function processSingleDriverDispatch(tripHelper: TTripHelper) {
  *
  * @param processingTrip - The trip data to send to the driver
  */
-function sendDriverDispatchNotification({
-  user,
-  ...trip
-}: TTrip & { user: TUser }): void {
+function sendDriverDispatchNotification(
+  trip: Awaited<ReturnType<typeof TripServices.requestForTrip>>,
+): void {
   if (!trip.processing_driver_id) return;
-  SocketServices.emitToUser(trip.processing_driver_id, 'trip:request', {
-    trip,
-    user,
-  });
+
+  SocketServices.emitToUser(trip.processing_driver_id, 'driver-trip', {
+    kind: RIDE_KIND.TRIP,
+    data: trip,
+  } satisfies TRideResponseV2);
 }

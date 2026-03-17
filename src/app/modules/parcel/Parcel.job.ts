@@ -1,15 +1,13 @@
-import {
-  prisma,
-  Parcel as TParcel,
-  ParcelHelper as TParcelHelper,
-  User as TUser,
-} from '@/utils/db';
+import { prisma, ParcelHelper as TParcelHelper } from '@/utils/db';
 import { SocketServices } from '../socket/Socket.service';
 import ms from 'ms';
 import { errorLogger } from '@/utils/logger';
 import { NotificationServices } from '../notification/Notification.service';
 import { userOmit } from '../user/User.constant';
 import { getNearestDriver } from './Parcel.utils';
+import { TRideResponseV2 } from '../trip/Trip.interface';
+import type { ParcelServices } from './Parcel.service';
+import { RIDE_KIND } from '../trip/Trip.constant';
 
 /**
  * Recursively searches for drivers when none are available
@@ -139,7 +137,7 @@ export async function processSingleDriverDispatch(parcelHelper: TParcelHelper) {
     /**
      * STEP 4: Send real-time dispatch request to driver
      */
-    sendDriverDispatchNotification(processingParcel as any);
+    sendDriverDispatchNotification(processingParcel);
 
     //? Notify driver about new parcel request
     await NotificationServices.createNotification({
@@ -187,13 +185,12 @@ export async function processSingleDriverDispatch(parcelHelper: TParcelHelper) {
  *
  * @param processingParcel - The parcel data to send to the driver
  */
-function sendDriverDispatchNotification({
-  user,
-  ...parcel
-}: TParcel & { user: TUser }): void {
+function sendDriverDispatchNotification(
+  parcel: Awaited<ReturnType<typeof ParcelServices.requestForParcel>>,
+): void {
   if (!parcel.processing_driver_id) return;
-  SocketServices.emitToUser(parcel.processing_driver_id, 'parcel:request', {
-    parcel,
-    user,
-  });
+  SocketServices.emitToUser(parcel.processing_driver_id, 'driver-trip', {
+    kind: RIDE_KIND.PARCEL,
+    data: parcel,
+  } satisfies TRideResponseV2);
 }

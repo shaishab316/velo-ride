@@ -9,6 +9,7 @@ import { userSelfOmit } from './User.constant';
 import ServerError from '@/errors/ServerError';
 import { stripe } from '../payment/Payment.utils';
 import config from '@/config';
+import { TGetUserLocationV2 } from './User.interface';
 
 export const UserControllers = {
   register: catchAsync(async ({ body }, res) => {
@@ -199,6 +200,18 @@ export const UserControllers = {
 
     return {
       message: 'OneSignal ID updated successfully!',
+    };
+  }),
+
+  /**
+   * v2 Controllers can be added here
+   */
+  getUserLocationV2: catchAsync<TGetUserLocationV2>(async ({ query }) => {
+    const data = await UserServices.getUserLocationV2(query);
+
+    return {
+      message: 'User location retrieved successfully!',
+      data,
     };
   }),
 };

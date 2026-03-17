@@ -9,6 +9,7 @@ import type {
   TDeleteUser,
   TGetAllUser,
   TGetPendingUsers,
+  TGetUserLocationPayloadV2,
   TPendingUserAction,
   TSetupUserProfile,
   TUpdateOneSignalId,
@@ -427,5 +428,26 @@ export const UserServices = {
         );
       }
     }
+  },
+
+  /**
+   * v2 Services can be added here
+   */
+  async getUserLocationV2({ user_id }: TGetUserLocationPayloadV2) {
+    const user = await prisma.user.findUnique({
+      where: { id: user_id },
+      select: {
+        location_lat: true,
+        location_lng: true,
+        location_address: true,
+        location_type: true,
+      },
+    });
+
+    if (!user) {
+      throw new ServerError(StatusCodes.NOT_FOUND, 'User not found');
+    }
+
+    return user;
   },
 };

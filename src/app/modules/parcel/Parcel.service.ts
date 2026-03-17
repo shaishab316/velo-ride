@@ -18,6 +18,8 @@ import { userOmit } from '../user/User.constant';
 import { NotificationServices } from '../notification/Notification.service';
 import { SocketServices } from '../socket/Socket.service';
 import { processSingleDriverDispatch } from './Parcel.job';
+import { DRIVER_EARNING_PERCENTAGE, RIDE_KIND } from '../trip/Trip.constant';
+import { TRideResponseV2 } from '../trip/Trip.interface';
 
 export const ParcelServices = {
   async getParcelDetails(parcel_id: string) {
@@ -38,11 +40,17 @@ export const ParcelServices = {
   async requestForParcel(payload: TRequestForParcel) {
     const driver_ids = await getNearestDriver(payload);
 
-    const parcel = await prisma.parcel.create({
+    const totalCost = await calculateParcelCost(payload);
+    const driverEarning = totalCost * DRIVER_EARNING_PERCENTAGE;
+    const adminEarning = totalCost - driverEarning;
+
+    const { helper, ...parcel } = await prisma.parcel.create({
       data: {
         ...payload,
         slug: await generateParcelSlug(),
-        total_cost: await calculateParcelCost(payload),
+        total_cost: totalCost,
+        driver_earning: +driverEarning.toFixed(2),
+        admin_earning: +adminEarning.toFixed(2),
         date: new Date().toISOString().split('T')[0], // "YYYY-MM-DD"
         helper: {
           create: {
@@ -57,8 +65,8 @@ export const ParcelServices = {
       },
     });
 
-    if (parcel.helper) {
-      await processSingleDriverDispatch(parcel.helper);
+    if (helper) {
+      await processSingleDriverDispatch(helper);
     }
 
     return parcel;
@@ -73,19 +81,14 @@ export const ParcelServices = {
   }) {
     const parcel = await prisma.parcel.findUnique({
       where: { id: parcel_id },
-      select: {
-        driver: {
-          select: {
-            name: true,
-            id: true,
-          },
-        },
-        user_id: true,
+      include: {
+        user: { omit: userOmit.USER },
+        driver: { omit: userOmit.DRIVER },
       },
     });
 
     if (!parcel) {
-      throw new Error('Parcel not found');
+      throw new ServerError(StatusCodes.NOT_FOUND, 'Parcel not found');
     }
 
     if (parcel?.driver?.id && parcel?.driver?.id !== driver_id)
@@ -93,6 +96,15 @@ export const ParcelServices = {
         StatusCodes.CONFLICT,
         `${parcel?.driver?.name?.split(' ')[0]} is already accepted this parcel`,
       );
+
+    if (parcel.status === EParcelStatus.ACCEPTED) {
+      return parcel;
+    } else if (parcel.status !== EParcelStatus.REQUESTED) {
+      throw new ServerError(
+        StatusCodes.CONFLICT,
+        `This trip is already ${parcel.status.toLowerCase()}`,
+      );
+    }
 
     const acceptedParcel = await prisma.parcel.update({
       where: { id: parcel_id },
@@ -207,20 +219,30 @@ export const ParcelServices = {
 
     //? Notify assigned drivers about cancellation
     if (parcel.driver_id) {
-      SocketServices.emitToUser(parcel.driver_id, 'parcel:cancelled', {
-        parcel: parcel,
-      });
+      SocketServices.emitToUser(parcel.driver_id, 'driver-trip', {
+        kind: RIDE_KIND.PARCEL,
+        data: cancelledParcel,
+      } satisfies TRideResponseV2);
     }
 
     //? Notify processing driver about cancellation
     if (parcel.processing_driver_id) {
-      SocketServices.emitToUser(
-        parcel.processing_driver_id,
-        'parcel:cancelled',
-        {
-          parcel: parcel,
+      SocketServices.emitToUser(parcel.processing_driver_id, 'driver-trip', {
+        kind: RIDE_KIND.PARCEL,
+        data: cancelledParcel,
+      } satisfies TRideResponseV2);
+    }
+
+    const driverId = parcel.driver_id || parcel.processing_driver_id;
+
+    if (driverId) {
+      //? Emit socket event to driver about trip completion and payment
+      await prisma.user.update({
+        where: { id: driverId },
+        data: {
+          is_online: true, //? set driver online after trip completion
         },
-      );
+      });
     }
 
     return cancelledParcel;
@@ -318,22 +340,32 @@ export const ParcelServices = {
   }) {
     const parcel = await prisma.parcel.findUnique({
       where: { id: parcel_id },
+      include: {
+        user: { omit: userOmit.USER },
+        driver: { omit: userOmit.DRIVER },
+      },
     });
 
     if (!parcel) {
-      throw new Error('Parcel not found');
+      throw new ServerError(StatusCodes.NOT_FOUND, 'Parcel not found');
     }
 
     if (parcel?.status === EParcelStatus.REQUESTED) {
       if (parcel?.processing_driver_id !== driver_id) {
-        throw new Error('You are not assigned to this parcel');
+        throw new ServerError(
+          StatusCodes.FORBIDDEN,
+          'You are not assigned to this parcel',
+        );
       }
     } else if (parcel?.driver_id !== driver_id) {
-      throw new Error('You are not assigned to this parcel');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not assigned to this parcel',
+      );
     }
 
     if (parcel.status === EParcelStatus.REQUESTED) {
-      const parcel = await prisma.parcel.update({
+      const updatedParcel = await prisma.parcel.update({
         where: { id: parcel_id },
         data: {
           processing_driver_id: null,
@@ -345,10 +377,10 @@ export const ParcelServices = {
         },
       });
 
-      if (!parcel.helper) return;
+      if (!updatedParcel.helper) return parcel;
 
       //? re-enqueue parcel for dispatch processing
-      await processSingleDriverDispatch(parcel.helper);
+      await processSingleDriverDispatch(updatedParcel.helper);
     } else {
       await prisma.parcel.update({
         where: { id: parcel_id },
@@ -365,16 +397,25 @@ export const ParcelServices = {
         type: 'WARNING',
       });
     }
+
+    return parcel;
   },
 
   //? New method to start parcel
   async startParcel({ driver_id, parcel_id }: TStartParcelArgs) {
     const parcel = await prisma.parcel.findUnique({
       where: { id: parcel_id },
+      include: {
+        user: { omit: userOmit.USER },
+        driver: { omit: userOmit.DRIVER },
+      },
     });
 
     if (parcel?.driver_id !== driver_id) {
-      throw new Error('You are not assigned to this parcel');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not assigned to this parcel',
+      );
     }
 
     if (parcel.status === EParcelStatus.STARTED) {
@@ -382,7 +423,10 @@ export const ParcelServices = {
     }
 
     if (parcel.status !== EParcelStatus.ACCEPTED) {
-      throw new Error('Parcel is not accepted yet');
+      throw new ServerError(
+        StatusCodes.BAD_REQUEST,
+        'Parcel is not accepted yet',
+      );
     }
 
     await NotificationServices.createNotification({
@@ -457,10 +501,17 @@ export const ParcelServices = {
   }) {
     const parcel = await prisma.parcel.findUnique({
       where: { id: parcel_id },
+      include: {
+        user: { omit: userOmit.USER },
+        driver: { omit: userOmit.DRIVER },
+      },
     });
 
     if (parcel?.user_id !== user_id) {
-      throw new Error('You are not authorized to pay for this parcel');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not authorized to pay for this parcel',
+      );
     }
 
     if (parcel.payment_at) {
@@ -503,14 +554,17 @@ export const ParcelServices = {
         where: { id: parcel.driver_id! },
         data: {
           balance: {
-            increment: parcel.total_cost,
+            increment: parcel.driver_earning,
           },
         },
       });
 
       //? Check for sufficient balance
       if (wallet.balance < 0) {
-        throw new Error('Insufficient balance in wallet');
+        throw new ServerError(
+          StatusCodes.BAD_REQUEST,
+          'Insufficient balance in wallet',
+        );
       }
 
       //? Warn if balance is low (less than $10)
@@ -538,7 +592,7 @@ export const ParcelServices = {
       await tx.transaction.create({
         data: {
           user_id: parcel.driver_id!,
-          amount: parcel.total_cost,
+          amount: parcel.driver_earning,
           type: ETransactionType.INCOME,
           ref_parcel_id: parcel_id,
           payment_method: 'WALLET',
@@ -561,6 +615,27 @@ export const ParcelServices = {
         type: 'INFO',
       });
 
+      //? Emit socket event to driver about trip completion and payment
+      await tx.user.update({
+        where: { id: parcel.driver_id! },
+        data: {
+          trip_given_count: {
+            increment: 1,
+          },
+          is_online: true, //? set driver online after trip completion
+        },
+      });
+
+      //? Emit socket event to driver about trip completion and payment
+      await tx.user.update({
+        where: { id: user_id },
+        data: {
+          trip_received_count: {
+            increment: 1,
+          },
+        },
+      });
+
       return { parcel, wallet, transaction };
     });
   },
@@ -571,10 +646,17 @@ export const ParcelServices = {
   }: TCompleteParcelDeliveryArgs) {
     const parcel = await prisma.parcel.findUnique({
       where: { id: parcel_id },
+      include: {
+        user: { omit: userOmit.USER },
+        driver: { omit: userOmit.DRIVER },
+      },
     });
 
     if (parcel?.driver_id !== driver_id) {
-      throw new Error('You are not assigned to this parcel');
+      throw new ServerError(
+        StatusCodes.FORBIDDEN,
+        'You are not assigned to this parcel',
+      );
     }
 
     if (parcel.status === EParcelStatus.COMPLETED) {
@@ -582,7 +664,10 @@ export const ParcelServices = {
     }
 
     if (parcel.status !== EParcelStatus.DELIVERED) {
-      throw new Error('Parcel is not delivered yet');
+      throw new ServerError(
+        StatusCodes.BAD_REQUEST,
+        'Parcel is not delivered yet',
+      );
     }
 
     parcel.started_at ??= new Date(); //? fallback

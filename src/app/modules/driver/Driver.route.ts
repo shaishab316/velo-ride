@@ -31,6 +31,14 @@ const driver = injectRoutes(Router(), {
   '/transactions': [TransactionRoutes.driver],
 });
 {
+  /**
+   * Driver home route,
+   *
+   * @returns
+   * - total trips count
+   * - total earnings
+   * - total online time
+   */
   driver.get('/', DriverControllers.home);
 
   /**
@@ -40,6 +48,24 @@ const driver = injectRoutes(Router(), {
     '/earnings',
     purifyRequest(QueryValidations.list, DriverValidations.getEarnings),
     DriverControllers.getEarnings,
+  );
+
+  /**
+   * v2 routes can be added here
+   */
+  driver.post(
+    '/update-location',
+    purifyRequest(DriverValidations.updateDriverLocation),
+    DriverControllers.updateDriverLocationV2,
+  );
+
+  /**
+   * Toggle Online Status Route v2
+   */
+  driver.post(
+    '/toggle-online',
+    purifyRequest(DriverValidations.toggleOnlineV2),
+    DriverControllers.toggleOnlineV2,
   );
 }
 

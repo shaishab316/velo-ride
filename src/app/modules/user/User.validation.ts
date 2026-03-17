@@ -113,4 +113,15 @@ export const UserValidations = {
       onesignal_id: z.string().nonempty('OneSignal ID is required'),
     }),
   }),
+
+  /**
+   * v2 Validations can be added here
+   */
+  getUserLocationV2: z.object({
+    query: z.object({
+      user_id: z.string().refine(exists('user'), {
+        error: ({ input }) => `User with id "${input}" does not exist`,
+      }),
+    }),
+  }),
 };

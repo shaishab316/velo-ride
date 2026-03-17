@@ -39,7 +39,10 @@ model Parcel {
   parcel_type EParcelType
   weight      Float
   amount      Float
-  total_cost  Float         @default(0.00)
+
+  total_cost     Float @default(0.00)
+  driver_earning Float @default(0.00)
+  admin_earning  Float @default(0.00)
 
   //! PROCESSING
   processing_driver_id String?
