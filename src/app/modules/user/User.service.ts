@@ -106,7 +106,7 @@ export const UserServices = {
     //? Send welcome notification
     await NotificationServices.createNotification({
       user_id: user.id,
-      title: 'Welcome to Pathao!',
+      title: 'Welcome to Radeef!',
       message:
         'Thank you for registering. Your account has been created successfully.',
       type: 'INFO',
