@@ -507,7 +507,7 @@ export const TripServices = {
       },
     });
 
-    if (trip?.user_id !== user_id) {
+    if (!trip || trip.user_id !== user_id) {
       throw new ServerError(
         StatusCodes.FORBIDDEN,
         'You are not authorized to pay for this trip',
@@ -535,9 +535,8 @@ export const TripServices = {
       throw new ServerError(StatusCodes.BAD_REQUEST, 'Trip already completed');
     }
 
-    return prisma.$transaction(async tx => {
-      //? Mark trip as paid
-      const trip = await tx.trip.update({
+    const result = await prisma.$transaction(async tx => {
+      const updatedTrip = await tx.trip.update({
         where: { id: trip_id },
         data: {
           payment_at: new Date(),
@@ -550,27 +549,16 @@ export const TripServices = {
         },
       });
 
-      //? Deduct from wallet
+      // ✅ Deduct from user wallet — check balance immediately
       const wallet = await tx.wallet.update({
         where: { id: user_id },
         data: {
-          balance: {
-            decrement: trip.total_cost,
-          },
+          balance: { decrement: updatedTrip.total_cost },
+          total_expend: { increment: updatedTrip.total_cost },
         },
       });
 
-      //? add balance to driver's wallet
-      await tx.wallet.update({
-        where: { id: trip.driver_id! },
-        data: {
-          balance: {
-            increment: trip.driver_earning ?? 0,
-          },
-        },
-      });
-
-      //? Check for sufficient balance
+      // ✅ Balance check BEFORE crediting driver
       if (wallet.balance < 0) {
         throw new ServerError(
           StatusCodes.BAD_REQUEST,
@@ -578,77 +566,72 @@ export const TripServices = {
         );
       }
 
-      //? Warn if balance is low (less than $10)
-      if (wallet.balance < 10) {
-        await NotificationServices.createNotification({
-          user_id,
-          title: 'Low Wallet Balance',
-          message: `Your wallet balance is low ($${wallet.balance.toFixed(2)}). Please top up to continue using our services.`,
-          type: 'WARNING',
-        });
-      }
+      // ✅ Credit driver
+      await tx.wallet.update({
+        where: { id: updatedTrip.driver_id! },
+        data: {
+          balance: { increment: updatedTrip.driver_earning ?? 0 },
+          total_income: { increment: updatedTrip.driver_earning ?? 0 },
+        },
+      });
 
-      //? Record transaction for user
       const transaction = await tx.transaction.create({
         data: {
           user_id,
-          amount: trip.total_cost,
+          amount: updatedTrip.total_cost,
           type: ETransactionType.EXPENSE,
           ref_trip_id: trip_id,
           payment_method: 'WALLET',
         },
       });
 
-      //? Record driver income transaction
       await tx.transaction.create({
         data: {
-          user_id: trip.driver_id!,
-          amount: trip.driver_earning ?? 0,
+          user_id: updatedTrip.driver_id!,
+          amount: updatedTrip.driver_earning ?? 0,
           type: ETransactionType.INCOME,
           ref_trip_id: trip_id,
           payment_method: 'WALLET',
         },
       });
 
-      //? Notify user about payment
-      await NotificationServices.createNotification({
-        user_id,
-        title: 'Payment Successful',
-        message: `Payment of $${trip.total_cost} for trip completed successfully.`,
-        type: 'INFO',
-      });
-
-      //? Notify driver about payment received
-      await NotificationServices.createNotification({
-        user_id: trip.driver_id!,
-        title: 'Payment Received',
-        message: `You received $${trip.total_cost} for the completed trip.`,
-        type: 'INFO',
-      });
-
-      //? Emit socket event to driver about trip completion and payment
       await tx.user.update({
-        where: { id: trip.driver_id! },
-        data: {
-          trip_given_count: {
-            increment: 1,
-          },
-          is_online: true, //? set driver online after trip completion
-        },
+        where: { id: updatedTrip.driver_id! },
+        data: { trip_given_count: { increment: 1 }, is_online: true },
       });
 
-      //? Emit socket event to driver about trip completion and payment
       await tx.user.update({
         where: { id: user_id },
-        data: {
-          trip_received_count: {
-            increment: 1,
-          },
-        },
+        data: { trip_received_count: { increment: 1 } },
       });
 
-      return { trip, wallet, transaction };
+      return { trip: updatedTrip, wallet, transaction };
     });
+
+    await NotificationServices.createNotification({
+      user_id,
+      title: 'Payment Successful',
+      message: `Payment of $${result.trip.total_cost} completed successfully.`,
+      type: 'INFO',
+    });
+
+    await NotificationServices.createNotification({
+      user_id: result.trip.driver_id!,
+      title: 'Payment Received',
+      message: `You received $${result.trip.driver_earning} for the completed trip.`,
+      type: 'INFO',
+    });
+
+    if (result.wallet.balance < 10) {
+      await NotificationServices.createNotification({
+        user_id,
+        title: 'Low Wallet Balance',
+        message: `Your wallet balance is low ($${result.wallet.balance.toFixed(2)}). Please top up.`,
+        type: 'WARNING',
+      });
+    }
+
+    return result;
   },
 
   /**
