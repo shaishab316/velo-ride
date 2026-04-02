@@ -77,19 +77,32 @@ export const UserControllers = {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
   profile: catchAsync(async ({ user }) => {
-    return {
-      message: 'Profile retrieved successfully!',
-      data: await prisma.user.findUnique({
-        where: { id: user.id },
-        omit: userSelfOmit[user.role],
-        include: {
-          wallet: {
-            omit: {
-              id: true,
-            },
+    const { wallet, ...userData } = (await prisma.user.findUnique({
+      where: { id: user.id },
+      omit: userSelfOmit[user.role],
+      include: {
+        wallet: {
+          omit: {
+            id: true,
           },
         },
-      }),
+      },
+    }))!;
+
+    return {
+      message: 'Profile retrieved successfully!',
+      data: {
+        ...userData,
+        wallet: {
+          balance: wallet?.balance ? Number(wallet.balance.toFixed(2)) : 0,
+          total_expend: wallet?.total_expend
+            ? Number(wallet.total_expend.toFixed(2))
+            : 0,
+          total_income: wallet?.total_income
+            ? Number(wallet.total_income.toFixed(2))
+            : 0,
+        },
+      },
     };
   }),
 
