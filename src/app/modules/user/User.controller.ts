@@ -94,13 +94,16 @@ export const UserControllers = {
       data: {
         ...userData,
         wallet: {
-          balance: wallet?.balance ? Number(wallet.balance.toFixed(2)) : 0,
-          total_expend: wallet?.total_expend
-            ? Number(wallet.total_expend.toFixed(2))
-            : 0,
-          total_income: wallet?.total_income
-            ? Number(wallet.total_income.toFixed(2))
-            : 0,
+          balance:
+            wallet?.balance != null ? Number(wallet.balance.toFixed(2)) : 0,
+          total_expend:
+            wallet?.total_expend != null
+              ? Number(wallet.total_expend.toFixed(2))
+              : 0,
+          total_income:
+            wallet?.total_income != null
+              ? Number(wallet.total_income.toFixed(2))
+              : 0,
         },
       },
     };
