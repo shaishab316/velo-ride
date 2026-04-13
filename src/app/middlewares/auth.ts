@@ -5,6 +5,10 @@ import { decodeToken, TToken } from '../modules/auth/Auth.utils';
 import catchAsync from './catchAsync';
 import { EUserRole, prisma, User as TUser } from '@/utils/db';
 import config from '@/config';
+import { generateOTP } from '@/utils/crypto/otp';
+import { sendEmail } from '@/utils/sendMail';
+import { emailTemplate } from '@/templates';
+import { errorLogger } from '@/utils/logger';
 
 /**
  * Middleware to authenticate and authorize requests based on user roles
@@ -51,13 +55,48 @@ const auth = ({
 /**
  * Common validator function
  */
-export function commonValidator({ is_admin, is_active }: TUser) {
+export async function commonValidator({
+  is_admin,
+  is_active,
+  is_verified,
+  id,
+  email,
+  name,
+  otp_id,
+}: TUser) {
   if (is_admin) return;
 
   if (!is_active) {
     throw new ServerError(
       StatusCodes.FORBIDDEN,
       'Your account is not active, please contact support.',
+    );
+  }
+
+  if (!is_verified) {
+    try {
+      const otp = generateOTP({
+        tokenType: 'access_token',
+        otpId: otp_id.toString(),
+      });
+
+      if (email)
+        await sendEmail({
+          to: email,
+          subject: `Your ${config.server.name} Account Verification OTP is ⚡ ${otp} ⚡.`,
+          html: emailTemplate({
+            userName: name,
+            otp,
+            template: 'account_verify',
+          }),
+        });
+    } catch (error: any) {
+      errorLogger.error(error.message);
+    }
+
+    throw new ServerError(
+      StatusCodes.FORBIDDEN,
+      'Your account is not verified, please verify your email.',
     );
   }
 }

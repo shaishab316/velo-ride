@@ -33,6 +33,7 @@ import { errorLogger } from '@/utils/logger';
 import { sendEmail } from '@/utils/sendMail';
 import { emailTemplate } from '@/templates';
 import config from '@/config';
+import { generateOTP } from '@/utils/crypto/otp';
 
 export const UserServices = {
   async userRegister({ password, email, phone, role }: TUserRegister) {
@@ -83,25 +84,25 @@ export const UserServices = {
 
     await this.stripeAccountConnect({ user_id: user.id });
 
-    // try {
-    //   const otp = generateOTP({
-    //     tokenType: 'access_token',
-    //     otpId: user.id + 1,
-    //   });
+    try {
+      const otp = generateOTP({
+        tokenType: 'access_token',
+        otpId: user.id + 1,
+      });
 
-    //   if (email)
-    //     await sendEmail({
-    //       to: email,
-    //       subject: `Your ${config.server.name} Account Verification OTP is ⚡ ${otp} ⚡.`,
-    //       html: emailTemplate({
-    //         userName: user.name,
-    //         otp,
-    //         template: 'account_verify',
-    //       }),
-    //     });
-    // } catch (error: any) {
-    //   errorLogger.error(error.message);
-    // }
+      if (email)
+        await sendEmail({
+          to: email,
+          subject: `Your ${config.server.name} Account Verification OTP is ⚡ ${otp} ⚡.`,
+          html: emailTemplate({
+            userName: user.name,
+            otp,
+            template: 'account_verify',
+          }),
+        });
+    } catch (error: any) {
+      errorLogger.error(error.message);
+    }
 
     //? Send welcome notification
     await NotificationServices.createNotification({
