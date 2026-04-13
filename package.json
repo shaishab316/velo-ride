@@ -17,7 +17,6 @@
     "url": "https://github.com/Alpha-Bytes-Department/uber-server.git"
   },
   "scripts": {
-    "prepare": "simple-git-hooks",
     "new-module": "tsx ./src/app/modules/.builder.ts",
     "build": "tsx esbuild.mts",
     "start": "node dist/server.js",
@@ -44,9 +43,6 @@
     "platform"
   ],
   "license": "MIT",
-  "simple-git-hooks": {
-    "pre-commit": "npm run lint && npm run type-check && npm run prettier"
-  },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",

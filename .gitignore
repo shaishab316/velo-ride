@@ -2,13 +2,12 @@ node_modules
 .env
 
 /dist
-/prisma
+/prisma/client
 /tmp
 
 *.log
 uploads/*
 .vscode/*
 
-**/migrations
 
 logs

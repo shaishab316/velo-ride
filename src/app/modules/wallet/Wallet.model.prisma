@@ -1,6 +1,6 @@
 model Wallet {
   id           String @id // User id
-  balance      Float  @default(100000) //TODO: Remove default value in production
+  balance      Float  @default(0)
   total_expend Float  @default(0)
   total_income Float  @default(0)
 
