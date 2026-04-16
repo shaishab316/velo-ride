@@ -59,12 +59,13 @@ const all = Router();
    *
    * [user] Pays for a completed trip by providing payment details.
    */
-  all.post(
-    '/pay-trip' /** Todo: not tested yet */,
-    auth.user,
-    purifyRequest(TripValidations.payForTripV2),
-    TripControllers.payForTripV2,
-  );
+  //! Payment auto do in driver accept the trip request,
+  // all.post(
+  //   '/pay-trip',
+  //   auth.user,
+  //   purifyRequest(TripValidations.payForTripV2),
+  //   TripControllers.payForTripV2,
+  // );
 
   /**
    * Driver Routes +++++++++++++++++++++++++++++

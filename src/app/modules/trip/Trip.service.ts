@@ -174,6 +174,12 @@ export const TripServices = {
       });
     }
 
+    //! Auto payment on driver accept for better UX, can be moved to trip completion if needed
+    await this.payForTrip({
+      user_id: updatedTrip.user_id!,
+      trip_id: updatedTrip.id,
+    });
+
     return updatedTrip;
   },
 
@@ -252,6 +258,11 @@ export const TripServices = {
           is_online: true, //? set driver online after trip cancellation
         },
       });
+    }
+
+    if (trip.payment_at) {
+      //? Auto refund if trip was paid
+      await this.refundTrip(trip_id);
     }
 
     return cancelledTrip;
@@ -469,8 +480,9 @@ export const TripServices = {
     const completedTrip = await prisma.trip.update({
       where: { id: trip_id },
       data: {
-        status: ETripStatus.ARRIVED,
+        status: ETripStatus.COMPLETED,
         arrived_at,
+        completed_at: new Date(),
 
         //? Calculate total time in milliseconds
         time: arrived_at.getTime() - trip.started_at.getTime(),
@@ -540,8 +552,6 @@ export const TripServices = {
         where: { id: trip_id },
         data: {
           payment_at: new Date(),
-          completed_at: new Date(),
-          status: ETripStatus.COMPLETED,
         },
         include: {
           user: { omit: userOmit.USER },
@@ -655,5 +665,100 @@ export const TripServices = {
         },
       },
     });
+  },
+
+  async refundTrip(trip_id: string) {
+    const trip = await prisma.trip.findUnique({
+      where: { id: trip_id },
+      include: {
+        user: {
+          omit: {
+            ...userOmit.USER,
+            email: false,
+          },
+        },
+        driver: {
+          omit: {
+            ...userOmit.DRIVER,
+            email: false,
+          },
+        },
+      },
+    });
+
+    if (!trip) {
+      throw new ServerError(StatusCodes.NOT_FOUND, 'Trip not found');
+    }
+
+    if (!trip.payment_at) {
+      return; //! dont throw error if trip was not paid, just return
+    }
+
+    const updatedTrip = await prisma.$transaction(async tx => {
+      const updatedTrip = await tx.trip.update({
+        where: { id: trip_id },
+        data: {
+          payment_at: null,
+        },
+        include: {
+          user: { omit: userOmit.USER },
+          driver: { omit: userOmit.DRIVER },
+        },
+      });
+
+      await tx.wallet.update({
+        where: { id: trip.user_id! },
+        data: {
+          balance: { increment: trip.total_cost },
+          total_expend: { decrement: trip.total_cost },
+        },
+      });
+
+      await tx.wallet.update({
+        where: { id: trip.driver_id! },
+        data: {
+          balance: { decrement: trip.driver_earning ?? 0 },
+          total_income: { decrement: trip.driver_earning ?? 0 },
+        },
+      });
+
+      await tx.transaction.create({
+        data: {
+          user_id: trip.user_id!,
+          amount: trip.total_cost,
+          type: ETransactionType.INCOME,
+          ref_trip_id: trip_id,
+          payment_method: 'WALLET',
+        },
+      });
+
+      await tx.transaction.create({
+        data: {
+          user_id: trip.driver_id!,
+          amount: trip.driver_earning ?? 0,
+          type: ETransactionType.EXPENSE,
+          ref_trip_id: trip_id,
+          payment_method: 'WALLET',
+        },
+      });
+
+      return updatedTrip;
+    });
+
+    await NotificationServices.createNotification({
+      user_id: trip.user_id!,
+      title: 'Trip Refunded',
+      message: `Your trip has been refunded. Amount $${trip.total_cost} has been credited back to your wallet.`,
+      type: 'INFO',
+    });
+
+    await NotificationServices.createNotification({
+      user_id: trip.driver_id!,
+      title: 'Trip Refund Processed',
+      message: `The trip with ID ${trip.id} has been refunded. Amount $${trip.driver_earning} has been debited from your wallet.`,
+      type: 'INFO',
+    });
+
+    return updatedTrip;
   },
 };
