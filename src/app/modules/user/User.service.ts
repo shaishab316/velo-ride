@@ -72,7 +72,8 @@ export const UserServices = {
         phone,
         password: await hashPassword(password),
         role,
-        is_verified: true,
+        is_verified: false,
+        otp_id: 1,
       },
       omit: userSelfOmit[role],
     });

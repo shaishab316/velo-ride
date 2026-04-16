@@ -54,27 +54,27 @@ export const AuthServices = {
       );
     }
 
-    // if (!user.is_verified) {
-    //   const otp = generateOTP({
-    //     tokenType: 'access_token',
-    //     otpId: user.id + user.otp_id,
-    //   });
+    if (!user.is_verified) {
+      const otp = generateOTP({
+        tokenType: 'access_token',
+        otpId: user.id + user.otp_id,
+      });
 
-    //   try {
-    //     if (email)
-    //       await sendEmail({
-    //         to: email,
-    //         subject: `Your ${config.server.name} Account Verification OTP is ⚡ ${otp} ⚡.`,
-    //         html: await emailTemplate({
-    //           userName: user.name,
-    //           otp,
-    //           template: 'account_verify',
-    //         }),
-    //       });
-    //   } catch (error: any) {
-    //     errorLogger.error(error.message);
-    //   }
-    // }
+      try {
+        if (email)
+          await sendEmail({
+            to: email,
+            subject: `Your ${config.server.name} Account Verification OTP is ⚡ ${otp} ⚡.`,
+            html: await emailTemplate({
+              userName: user.name,
+              otp,
+              template: 'account_verify',
+            }),
+          });
+      } catch (error: any) {
+        errorLogger.error(error.message);
+      }
+    }
 
     return prisma.user.findUnique({
       where: { id: user.id },
