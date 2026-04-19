@@ -153,6 +153,11 @@ export const ParcelServices = {
       });
     }
 
+    await this.payForParcel({
+      user_id: acceptedParcel.user_id!,
+      parcel_id: acceptedParcel.id,
+    });
+
     return acceptedParcel;
   },
 
@@ -243,6 +248,10 @@ export const ParcelServices = {
           is_online: true, //? set driver online after trip completion
         },
       });
+    }
+
+    if (parcel.payment_at) {
+      await this.refundParcel(parcel_id);
     }
 
     return cancelledParcel;
@@ -481,7 +490,8 @@ export const ParcelServices = {
     return prisma.parcel.update({
       where: { id: parcel_id },
       data: {
-        status: EParcelStatus.DELIVERED,
+        status: EParcelStatus.COMPLETED,
+        completed_at: new Date(),
         delivered_at: new Date(),
         delivery_proof_files: files,
       },
@@ -530,8 +540,6 @@ export const ParcelServices = {
         where: { id: parcel_id },
         data: {
           payment_at: new Date(),
-          completed_at: new Date(),
-          status: EParcelStatus.COMPLETED,
         },
         include: {
           user: { omit: userOmit.USER },
@@ -716,6 +724,73 @@ export const ParcelServices = {
           },
         },
       },
+    });
+  },
+
+  async refundParcel(parcel_id: string) {
+    const parcel = await prisma.parcel.findUnique({
+      where: { id: parcel_id },
+    });
+
+    if (!parcel) {
+      throw new ServerError(StatusCodes.NOT_FOUND, 'Parcel not found');
+    }
+
+    if (!parcel.payment_at) {
+      return; //? No payment made, so no refund needed
+    }
+
+    return prisma.$transaction(async tx => {
+      //? Refund user
+      await tx.wallet.update({
+        where: { id: parcel.user_id! },
+        data: {
+          balance: {
+            increment: parcel.total_cost,
+          },
+        },
+      });
+
+      //? Deduct from driver's wallet
+      await tx.wallet.update({
+        where: { id: parcel.driver_id! },
+        data: {
+          balance: {
+            decrement: parcel.driver_earning,
+          },
+        },
+      });
+
+      //? Record refund transaction for user
+      await tx.transaction.create({
+        data: {
+          user_id: parcel.user_id!,
+          amount: parcel.total_cost,
+          type: ETransactionType.BONUS, //? Using BONUS type for refunds
+          ref_parcel_id: parcel_id,
+          payment_method: 'WALLET',
+        },
+      });
+
+      //? Record deduction transaction for driver
+      await tx.transaction.create({
+        data: {
+          user_id: parcel.driver_id!,
+          amount: parcel.driver_earning,
+          type: ETransactionType.EXPENSE, //? Using EXPENSE type for driver deduction
+          ref_parcel_id: parcel_id,
+          payment_method: 'WALLET',
+        },
+      });
+
+      //? Update parcel status to refunded
+      await tx.parcel.update({
+        where: { id: parcel_id },
+        data: {
+          status: EParcelStatus.CANCELLED,
+          payment_at: null,
+        },
+      });
     });
   },
 };

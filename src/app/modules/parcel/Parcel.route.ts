@@ -76,12 +76,12 @@ const all = Router();
    *
    * [user] Pay for parcel v2
    */
-  all.post(
-    '/pay-for-parcel',
-    auth.user,
-    purifyRequest(ParcelValidations.payForParcelV2),
-    ParcelControllers.payForParcelV2,
-  );
+  // all.post(
+  //   '/pay-for-parcel',
+  //   auth.user,
+  //   purifyRequest(ParcelValidations.payForParcelV2),
+  //   ParcelControllers.payForParcelV2,
+  // );
 
   /**
    * Driver Parcel v2 Route
