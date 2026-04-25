@@ -32,9 +32,27 @@ export const TripServices = {
 
   //! Socket
   async requestForTrip(payload: TRequestForTrip) {
+    // ✅ Check if user has enough balance in wallet
+    const userWallet = await prisma.wallet.findUnique({
+      where: { id: payload.user_id },
+    });
+
+    if (!userWallet) {
+      throw new ServerError(StatusCodes.NOT_FOUND, 'User wallet not found');
+    }
+
     const driver_ids = await getNearestDriver(payload);
 
     const totalCost = await calculateTripCost(payload);
+
+    // ✅ Verify sufficient balance before creating trip
+    if (userWallet.balance < totalCost) {
+      throw new ServerError(
+        StatusCodes.BAD_REQUEST,
+        `Insufficient balance. Required: $${totalCost.toFixed(2)}, Available: $${userWallet.balance.toFixed(2)}`,
+      );
+    }
+
     const driverEarning = totalCost * DRIVER_EARNING_PERCENTAGE;
     const adminEarning = totalCost - driverEarning;
 
