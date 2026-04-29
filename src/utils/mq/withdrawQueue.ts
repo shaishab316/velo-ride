@@ -83,7 +83,7 @@
 //     await NotificationServices.createNotification({
 //       user_id: data.user.id,
 //       title: 'Withdrawal Completed',
-//       message: `$${data.amount} has been successfully withdrawn to your account.`,
+//       message: `€ ${data.amount} has been successfully withdrawn to your account.`,
 //       type: 'INFO',
 //     });
 
@@ -98,7 +98,7 @@
 //       await NotificationServices.createNotification({
 //         user_id: data.user.id,
 //         title: 'Withdrawal Failed',
-//         message: `Your withdrawal request of $${data.amount} failed. ${error.message}`,
+//         message: `Your withdrawal request of € ${data.amount} failed. ${error.message}`,
 //         type: 'ERROR',
 //       });
 

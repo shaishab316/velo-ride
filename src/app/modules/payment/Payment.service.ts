@@ -94,7 +94,7 @@ export const PaymentServices = {
         await NotificationServices.createNotification({
           user_id: user.id,
           title: 'Withdrawal Request Submitted',
-          message: `Your withdrawal request of $${amount} is being processed.`,
+          message: `Your withdrawal request of € ${amount} is being processed.`,
           type: 'INFO',
         });
 
@@ -153,7 +153,7 @@ export const PaymentServices = {
       await NotificationServices.createNotification({
         user_id: user.id,
         title: 'Withdrawal Completed',
-        message: `$${amount} has been successfully withdrawn to your account.`,
+        message: `€ ${amount} has been successfully withdrawn to your account.`,
         type: 'INFO',
       });
 
@@ -172,7 +172,7 @@ export const PaymentServices = {
         await NotificationServices.createNotification({
           user_id: user.id,
           title: 'Withdrawal Failed',
-          message: `Your withdrawal request of $${amount} failed. ${error.message}`,
+          message: `Your withdrawal request of € ${amount} failed. ${error.message}`,
           type: 'ERROR',
         });
 
@@ -192,7 +192,7 @@ export const PaymentServices = {
           price_data: {
             currency: config.payment.currency,
             product_data: {
-              name: `${config.server.name} Wallet Top-up of $${amount}`,
+              name: `${config.server.name} Wallet Top-up of € ${amount}`,
               description: 'Add funds to your wallet balance.',
               metadata: {
                 type: 'wallet_topup',
@@ -240,7 +240,7 @@ export const PaymentServices = {
     await NotificationServices.createNotification({
       user_id,
       title: 'Wallet Top-up Successful',
-      message: `Your wallet has been topped up with $${topupAmount}. Happy riding!`,
+      message: `Your wallet has been topped up with € ${topupAmount}. Happy riding!`,
       type: 'INFO',
     });
   },

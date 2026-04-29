@@ -49,7 +49,7 @@ export const TripServices = {
     if (userWallet.balance < totalCost) {
       throw new ServerError(
         StatusCodes.BAD_REQUEST,
-        `Insufficient balance. Required: $${totalCost.toFixed(2)}, Available: $${userWallet.balance.toFixed(2)}`,
+        `Insufficient balance. Required: € ${totalCost.toFixed(2)}, Available: € ${userWallet.balance.toFixed(2)}`,
       );
     }
 
@@ -520,7 +520,7 @@ export const TripServices = {
       await NotificationServices.createNotification({
         user_id: completedTrip.user_id,
         title: 'Trip Completed',
-        message: `Your trip has been completed. Total cost: $${completedTrip.total_cost}`,
+        message: `Your trip has been completed. Total cost: € ${completedTrip.total_cost}`,
         type: 'INFO',
       });
     }
@@ -639,14 +639,14 @@ export const TripServices = {
     await NotificationServices.createNotification({
       user_id,
       title: 'Payment Successful',
-      message: `Payment of $${result.trip.total_cost} completed successfully.`,
+      message: `Payment of € ${result.trip.total_cost} completed successfully.`,
       type: 'INFO',
     });
 
     await NotificationServices.createNotification({
       user_id: result.trip.driver_id!,
       title: 'Payment Received',
-      message: `You received $${result.trip.driver_earning} for the completed trip.`,
+      message: `You received € ${result.trip.driver_earning} for the completed trip.`,
       type: 'INFO',
     });
 
@@ -654,7 +654,7 @@ export const TripServices = {
       await NotificationServices.createNotification({
         user_id,
         title: 'Low Wallet Balance',
-        message: `Your wallet balance is low ($${result.wallet.balance.toFixed(2)}). Please top up.`,
+        message: `Your wallet balance is low (€ ${result.wallet.balance.toFixed(2)}). Please top up.`,
         type: 'WARNING',
       });
     }
@@ -766,14 +766,14 @@ export const TripServices = {
     await NotificationServices.createNotification({
       user_id: trip.user_id!,
       title: 'Trip Refunded',
-      message: `Your trip has been refunded. Amount $${trip.total_cost} has been credited back to your wallet.`,
+      message: `Your trip has been refunded. Amount € ${trip.total_cost} has been credited back to your wallet.`,
       type: 'INFO',
     });
 
     await NotificationServices.createNotification({
       user_id: trip.driver_id!,
       title: 'Trip Refund Processed',
-      message: `The trip with ID ${trip.id} has been refunded. Amount $${trip.driver_earning} has been debited from your wallet.`,
+      message: `The trip with ID ${trip.id} has been refunded. Amount € ${trip.driver_earning} has been debited from your wallet.`,
       type: 'INFO',
     });
 

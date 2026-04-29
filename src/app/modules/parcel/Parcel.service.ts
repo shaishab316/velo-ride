@@ -580,7 +580,7 @@ export const ParcelServices = {
         await NotificationServices.createNotification({
           user_id,
           title: 'Low Wallet Balance',
-          message: `Your wallet balance is low ($${wallet.balance.toFixed(2)}). Please top up to continue using our services.`,
+          message: `Your wallet balance is low (€ ${wallet.balance.toFixed(2)}). Please top up to continue using our services.`,
           type: 'WARNING',
         });
       }
@@ -611,7 +611,7 @@ export const ParcelServices = {
       await NotificationServices.createNotification({
         user_id,
         title: 'Payment Successful',
-        message: `Payment of $${parcel.total_cost} for parcel delivery completed successfully.`,
+        message: `Payment of € ${parcel.total_cost} for parcel delivery completed successfully.`,
         type: 'INFO',
       });
 
@@ -619,7 +619,7 @@ export const ParcelServices = {
       await NotificationServices.createNotification({
         user_id: parcel.driver_id!,
         title: 'Payment Received',
-        message: `You received $${parcel.total_cost} for the completed parcel delivery.`,
+        message: `You received € ${parcel.total_cost} for the completed parcel delivery.`,
         type: 'INFO',
       });
 
